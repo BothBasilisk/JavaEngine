@@ -1,26 +1,35 @@
 package engine;
 
+import engine.graph.Mesh;
+import engine.shader.ShaderProgram;
+import engine.utils.Utils;
 import org.lwjgl.opengl.GL;
 
 import static org.lwjgl.glfw.GLFW.*;
-import static org.lwjgl.opengl.ARBVertexArrayObject.glBindVertexArray;
-import static org.lwjgl.opengl.ARBVertexArrayObject.glGenVertexArrays;
 import static org.lwjgl.opengl.GL11C.*;
-import static org.lwjgl.opengl.GL15C.*;
-import static org.lwjgl.opengl.GL20C.*;
 
 public class Engine {
     private long window;
 
-    private float[] vertexArray = {
-            -0.5f, -0.5f, 0.0f, 1.0f, 0.0f, 0.0f,
-             0.5f, -0.5f, 0.0f, 0.0f, 1.0f, 0.0f,
-             0.0f,  0.5f, 0.0f, 0.0f, 0.0f, 1.0f
+    float[] positions = new float[]{
+            -0.5f,  0.5f, 0.0f,
+            -0.5f, -0.5f, 0.0f,
+            0.5f, -0.5f, 0.0f,
+            0.5f,  0.5f, 0.0f
+    };
+    float[] colors = new float[]{
+            0.5f, 0.0f, 0.0f,
+            0.0f, 0.5f, 0.0f,
+            0.0f, 0.0f, 0.5f,
+            0.0f, 1.0f, 1.0f
+    };
+    int[] indices = new int[]{
+            0, 1, 3,
+            3, 1, 2
     };
 
-    private int vaoId;
-    private int vboId;
-    int shaderProgramId;
+    ShaderProgram shaderProgram;
+    Mesh mesh;
 
     public void run(){
         init();
@@ -52,32 +61,37 @@ public class Engine {
 
         GL.createCapabilities();
 
-        //Loading shaders
-        shaderLoading();
+        try{
+            String vertexShader = Utils.loadResource("/shaders/vertex.vert");
+            String fragmentShader = Utils.loadResource("/shaders/fragment.frag");
+
+            //Loading shaders
+            shaderProgram = new ShaderProgram(vertexShader, fragmentShader);
+
+            shaderProgram.createUniform("uColor");
+        }catch(Exception e){
+            e.printStackTrace();
+            throw new RuntimeException("Error while loading shaders");
+        }
+
+        mesh = new Mesh(positions, colors, indices);
     }
 
     private void loop(){
-        vaoId = glGenVertexArrays();
-        glBindVertexArray(vaoId);
-        vboId = glGenBuffers();
-        glBindBuffer(GL_ARRAY_BUFFER, vboId);
-
-        glBufferData(GL_ARRAY_BUFFER, vertexArray, GL_STATIC_DRAW);
-
-        //Position
-        glVertexAttribPointer(0, 3, GL_FLOAT, false, 6*4, 0);
-        //Color
-        glVertexAttribPointer(1, 3, GL_FLOAT, false, 6*4, 3*4);
-
-        glEnableVertexAttribArray(0);
-        glEnableVertexAttribArray(1);
-
         while(!glfwWindowShouldClose(window)){
+            double time = glfwGetTime();
+            float greenValue = (float) (Math.sin(time) / 2.0f + 0.5f);
+
             //cleaning the screen and setting buffers and listeners for events
             glClear(GL_COLOR_BUFFER_BIT);
-            glUseProgram(shaderProgramId);
-            glBindVertexArray(vaoId);
-            glDrawArrays(GL_TRIANGLES, 0, 3);
+
+            shaderProgram.bind();
+            shaderProgram.setUniforms("uColor", 0.0f, greenValue, 0.0f);
+
+            mesh.render();
+
+            shaderProgram.unbind();
+
             glfwSwapBuffers(window);
             glfwPollEvents();
         }
@@ -86,58 +100,10 @@ public class Engine {
     private void cleanup(){
         //Destroying the window
         glfwDestroyWindow(window);
+        //Cleaning
+        shaderProgram.cleanup();
+        mesh.cleanup();
+        //Terminating
         glfwTerminate();
-    }
-
-    private void shaderLoading(){
-        String vertexShader = """
-                #version 330 core
-                layout (location = 0) in vec3 aPos;
-                layout (location = 1) in vec3 aColor;
-                out vec3 ourColor;
-                void main(){
-                    gl_Position = vec4(aPos.x, aPos.y, aPos.z, 1.0);
-                    ourColor = aColor;
-                }""";
-
-        String fragmentShader = """
-                #version 330 core
-                in vec3 ourColor;
-                out vec4 FragColor;
-                void main(){
-                    FragColor = vec4(ourColor, 1.0);
-                }""";
-
-        int vertexShaderId = glCreateShader(GL_VERTEX_SHADER);
-        int fragmentShaderId = glCreateShader(GL_FRAGMENT_SHADER);
-
-        glShaderSource(vertexShaderId, vertexShader);
-        glCompileShader(vertexShaderId);
-        glShaderSource(fragmentShaderId, fragmentShader);
-        glCompileShader(fragmentShaderId);
-
-        //Checking if shaders loaded correctly
-        int[] resultVertex = new int[1];
-        glGetShaderiv(vertexShaderId, GL_COMPILE_STATUS, resultVertex);
-        if(resultVertex[0] == GL_FALSE){
-            System.out.println(glGetShaderInfoLog(vertexShaderId));
-        }
-
-        int[] resultFragment = new int[1];
-        glGetShaderiv(fragmentShaderId, GL_COMPILE_STATUS, resultFragment);
-        if(resultFragment[0] == GL_FALSE){
-            System.out.println(glGetShaderInfoLog(fragmentShaderId));
-        }
-
-        shaderProgramId = glCreateProgram();
-        glAttachShader(shaderProgramId, vertexShaderId);
-        glAttachShader(shaderProgramId, fragmentShaderId);
-        glLinkProgram(shaderProgramId);
-
-        int[] resultProgram = new int[1];
-        glGetProgramiv(shaderProgramId, GL_LINK_STATUS, resultProgram);
-        if (resultProgram[0] == GL_FALSE) {
-            System.out.println("Program linking error: " + glGetProgramInfoLog(shaderProgramId));
-        }
     }
 }
